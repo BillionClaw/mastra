@@ -201,7 +201,19 @@ export class MessageHistory implements Processor {
     const { threadId, resourceId } = context;
 
     const newInput = messageList.get.input.db();
-    const newOutput = messageList.get.response.db();
+    let newOutput = messageList.get.response.db();
+
+    // If no output messages found via tracking sets, check all messages
+    // This handles the case where SaveQueueManager.flushMessages() was called
+    // earlier (e.g., via savePerStep) and drained the tracking sets, but the
+    // messages haven't actually been persisted yet (e.g., during resumed streams)
+    if (newOutput.length === 0) {
+      const allMessages = messageList.get.all.db();
+      // Filter for assistant and tool messages that were likely added during this execution
+      // but may have been drained from the tracking sets
+      newOutput = allMessages.filter(msg => msg.role === 'assistant' || msg.role === 'tool');
+    }
+
     const messagesToSave = [...newInput, ...newOutput];
 
     if (messagesToSave.length === 0) {
