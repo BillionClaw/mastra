@@ -64,7 +64,9 @@ export function createAgenticLoopWorkflow<Tools extends ToolSet = ToolSet, OUTPU
         internal: InternalSpans.WORKFLOW,
       },
       shouldPersistSnapshot: params => {
-        return params.workflowStatus === 'suspended';
+        // Persist snapshot when suspended (for resumption) or running (during resume)
+        // to ensure the resumed state is saved before the workflow completes
+        return params.workflowStatus === 'suspended' || params.workflowStatus === 'running';
       },
       validateInputs: false,
     },
