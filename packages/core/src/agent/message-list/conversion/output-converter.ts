@@ -71,6 +71,20 @@ export function sanitizeV5UIMessages(
             'openai' in (p.providerMetadata as Record<string, unknown>),
         );
 
+      // When building a prompt TO the LLM, always check if we need to strip
+      // providerMetadata.openai to prevent duplicate item errors.
+      // OpenAI's Responses API uses itemId (msg_*/rs_*) for message linking,
+      // and duplicate itemIds cause "Duplicate item found" errors.
+      const hasOpenAIProviderMetadata =
+        filterIncompleteToolCalls &&
+        m.parts.some(
+          p =>
+            'providerMetadata' in p &&
+            p.providerMetadata &&
+            typeof p.providerMetadata === 'object' &&
+            'openai' in (p.providerMetadata as Record<string, unknown>),
+        );
+
       // Filter out streaming states and optionally input-available (which aren't supported by convertToModelMessages)
       const safeParts = m.parts.filter(p => {
         // Filter out data-* parts (custom streaming data from writer.custom())
@@ -130,13 +144,15 @@ export function sanitizeV5UIMessages(
       const sanitized = {
         ...m,
         parts: safeParts.map(part => {
-          // When OpenAI reasoning was stripped, clear openai metadata from ALL remaining
-          // parts so the SDK sends inline content instead of item_reference. This covers:
+          // When building a prompt TO the LLM, clear providerMetadata.openai from ALL parts
+          // to prevent duplicate item errors. OpenAI's Responses API uses itemId (msg_*/rs_*)
+          // for message linking, and duplicate itemIds cause "Duplicate item found" errors.
+          // This also covers the case when OpenAI reasoning was stripped:
           //   - providerMetadata.openai on text/reasoning parts (msg_*/rs_* itemIds)
           //   - callProviderMetadata.openai on tool parts (fc_* itemIds used by convertToModelMessages)
           // Without paired reasoning items, OpenAI rejects orphaned item_references with:
           //   "function_call was provided without its required reasoning item"
-          if (hasOpenAIReasoning) {
+          if (hasOpenAIReasoning || hasOpenAIProviderMetadata) {
             if ('providerMetadata' in part && part.providerMetadata) {
               const meta = part.providerMetadata as Record<string, unknown>;
               if ('openai' in meta) {
