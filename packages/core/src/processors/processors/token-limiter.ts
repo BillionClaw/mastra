@@ -97,11 +97,11 @@ export class TokenLimiterProcessor implements Processor<'token-limiter', { syste
 
     const messages = messageList.get.all.db();
 
-    // If no messages or empty array, throw TripWire - can't send LLM a request with no messages
+    // If no messages or empty array, return early without error.
+    // This allows resume operations to work correctly where messages are loaded from snapshot.
+    // The LLM call will naturally fail later if there are truly no messages to send.
     if (!messages || messages.length === 0) {
-      throw new TripWire('TokenLimiterProcessor: No messages to process. Cannot send LLM a request with no messages.', {
-        retry: false,
-      });
+      return;
     }
 
     // Calculate token count for system messages (always included, never filtered)
