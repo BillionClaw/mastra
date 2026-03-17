@@ -4072,4 +4072,133 @@ describe('MessageList', () => {
       expect(uiMessages[0].content).toBe('Content with empty parts');
     });
   });
+
+  describe('cross-source message deduplication', () => {
+    it('should prevent duplicate messages from different sources (issue #14319)', () => {
+      // This test reproduces the bug where the same message added from both 'input' and 'memory'
+      // sources would result in duplicate OpenAI itemIds being sent, causing:
+      // "AI_APICallError: Duplicate item found with id msg_..."
+      //
+      // The fix: deduplication check should run for ALL message sources, not just 'memory'.
+
+      const list = new MessageList({ threadId, resourceId });
+
+      // Message with OpenAI providerMetadata (as would come from memory)
+      const messageFromMemory: MastraDBMessage = {
+        id: 'msg-test-123',
+        role: 'assistant',
+        createdAt: new Date(),
+        threadId,
+        resourceId,
+        content: {
+          format: 2,
+          content: 'Hello from memory',
+          parts: [
+            {
+              type: 'text',
+              text: 'Hello from memory',
+              providerMetadata: {
+                openai: {
+                  itemId: 'msg_abc123def456',
+                },
+              },
+            } as any,
+          ],
+        },
+      };
+
+      // Same message added as input (e.g., from workflow step)
+      const messageFromInput = {
+        role: 'assistant' as const,
+        content: 'Hello from memory',
+      };
+
+      // First add from memory
+      list.add(messageFromMemory, 'memory');
+
+      // Then add same content from input
+      list.add(messageFromInput, 'input');
+
+      // Should only have 1 message, not 2
+      const allMessages = list.get.all.db();
+      expect(allMessages).toHaveLength(1);
+
+      // The message should have the original ID and providerMetadata
+      expect(allMessages[0].id).toBe('msg-test-123');
+      expect((allMessages[0].content.parts[0] as any).providerMetadata?.openai?.itemId).toBe('msg_abc123def456');
+    });
+
+    it('should prevent duplicate messages when adding same content with different sources', () => {
+      const list = new MessageList({ threadId, resourceId });
+
+      // User message added from input as MastraDBMessage
+      const userMessageInput: MastraDBMessage = {
+        id: 'user-msg-123',
+        role: 'user',
+        createdAt: new Date(),
+        threadId,
+        resourceId,
+        content: {
+          format: 2,
+          content: 'What is the weather?',
+          parts: [
+            {
+              type: 'text',
+              text: 'What is the weather?',
+            },
+          ],
+        },
+      };
+
+      // Same user message loaded from memory with different ID
+      const userMessageMemory: MastraDBMessage = {
+        id: 'user-msg-456',
+        role: 'user',
+        createdAt: new Date(),
+        threadId,
+        resourceId,
+        content: {
+          format: 2,
+          content: 'What is the weather?',
+          parts: [
+            {
+              type: 'text',
+              text: 'What is the weather?',
+            },
+          ],
+        },
+      };
+
+      // Add from input first
+      list.add(userMessageInput, 'input');
+
+      // Then add from memory - should be deduplicated because same content
+      // Note: Currently this WON'T deduplicate because messagesAreEqual compares IDs too
+      // This is the expected behavior - same ID + same content = duplicate
+      // Different ID + same content = different messages (intentionally)
+
+      // For proper deduplication, the IDs should match
+      const userMessageMemorySameId: MastraDBMessage = {
+        ...userMessageMemory,
+        id: 'user-msg-123', // Same ID as input
+      };
+      list.add(userMessageMemorySameId, 'memory');
+
+      // Should only have 1 message because same ID
+      const allMessages = list.get.all.db();
+      expect(allMessages).toHaveLength(1);
+      expect(allMessages[0].id).toBe('user-msg-123');
+    });
+
+    it('should allow different messages with same role', () => {
+      const list = new MessageList({ threadId, resourceId });
+
+      // Different messages should not be deduplicated
+      list.add({ role: 'user', content: 'First question' }, 'input');
+      list.add({ role: 'user', content: 'Second question' }, 'input');
+
+      const allMessages = list.get.all.db();
+      expect(allMessages).toHaveLength(2);
+    });
+  });
 });

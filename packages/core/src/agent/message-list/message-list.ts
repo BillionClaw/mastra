@@ -816,12 +816,13 @@ export class MessageList {
 
     const latestMessage = this.messages.at(-1);
 
-    if (messageSource === `memory`) {
-      for (const existingMessage of this.messages) {
-        // don't double store any messages
-        if (messagesAreEqual(existingMessage, messageV2)) {
-          return;
-        }
+    // Check for duplicate messages regardless of source to prevent the same message
+    // from being added multiple times (e.g., from both 'input' and 'memory' sources).
+    // This fixes issue #14319 where duplicate OpenAI itemIds (msg_*) were being sent.
+    for (const existingMessage of this.messages) {
+      // don't double store any messages
+      if (messagesAreEqual(existingMessage, messageV2)) {
+        return;
       }
     }
 
