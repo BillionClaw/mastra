@@ -71,6 +71,23 @@ export function sanitizeV5UIMessages(
             'openai' in (p.providerMetadata as Record<string, unknown>),
         );
 
+      // When building a prompt TO the LLM, check if any part has OpenAI providerMetadata
+      // with server-assigned itemIds (msg_*, rs_*, fc_*). These cannot be replayed to
+      // OpenAI's Responses API without causing "Duplicate item found" errors.
+      // See: https://github.com/mastra-ai/mastra/issues/14319
+      const hasOpenAIItemIds =
+        filterIncompleteToolCalls &&
+        m.parts.some(p => {
+          const providerMetadata = (p as { providerMetadata?: Record<string, unknown> }).providerMetadata;
+          const callProviderMetadata = (p as { callProviderMetadata?: Record<string, unknown> }).callProviderMetadata;
+          const hasItemId = (meta: Record<string, unknown> | undefined) =>
+            meta?.openai &&
+            typeof meta.openai === 'object' &&
+            'itemId' in (meta.openai as Record<string, unknown>) &&
+            typeof (meta.openai as Record<string, unknown>).itemId === 'string';
+          return hasItemId(providerMetadata) || hasItemId(callProviderMetadata);
+        });
+
       // Filter out streaming states and optionally input-available (which aren't supported by convertToModelMessages)
       const safeParts = m.parts.filter(p => {
         // Filter out data-* parts (custom streaming data from writer.custom())
@@ -130,13 +147,15 @@ export function sanitizeV5UIMessages(
       const sanitized = {
         ...m,
         parts: safeParts.map(part => {
-          // When OpenAI reasoning was stripped, clear openai metadata from ALL remaining
-          // parts so the SDK sends inline content instead of item_reference. This covers:
+          // When OpenAI reasoning was stripped OR when any part has OpenAI server-assigned itemIds
+          // (msg_*, rs_*, fc_*), clear openai metadata from ALL remaining parts so the SDK sends
+          // inline content instead of item_reference. This covers:
           //   - providerMetadata.openai on text/reasoning parts (msg_*/rs_* itemIds)
           //   - callProviderMetadata.openai on tool parts (fc_* itemIds used by convertToModelMessages)
-          // Without paired reasoning items, OpenAI rejects orphaned item_references with:
+          // Without paired items, OpenAI rejects orphaned item_references with:
           //   "function_call was provided without its required reasoning item"
-          if (hasOpenAIReasoning) {
+          //   "Duplicate item found with id: msg_..." (issue #14319)
+          if (hasOpenAIReasoning || hasOpenAIItemIds) {
             if ('providerMetadata' in part && part.providerMetadata) {
               const meta = part.providerMetadata as Record<string, unknown>;
               if ('openai' in meta) {
