@@ -44,6 +44,10 @@ interface PrepareMemoryStepOptions<OUTPUT = undefined> {
   instructions: SystemMessage;
   memoryConfig?: MemoryConfigInternal;
   memory?: MastraMemory;
+  resumeContext?: {
+    resumeData: any;
+    snapshot: any;
+  };
 }
 
 export function createPrepareMemoryStep<OUTPUT = undefined>({
@@ -56,6 +60,7 @@ export function createPrepareMemoryStep<OUTPUT = undefined>({
   instructions,
   memoryConfig,
   memory,
+  resumeContext,
 }: PrepareMemoryStepOptions<OUTPUT>) {
   return createStep({
     id: 'prepare-memory-step',
@@ -76,6 +81,21 @@ export function createPrepareMemoryStep<OUTPUT = undefined>({
       // Create processorStates map - persists across loop iterations within this agent turn
       // Shared by all processor methods (input and output) for state sharing
       const processorStates = new Map<string, ProcessorState>();
+
+      // Restore messages from snapshot if resuming
+      // This must happen before adding new messages and running input processors
+      const existingSnapshot = resumeContext?.snapshot;
+      if (existingSnapshot) {
+        for (const key in existingSnapshot?.context) {
+          const step = existingSnapshot?.context[key];
+          if (step && step.status === 'suspended' && step.suspendPayload?.__streamState?.messageList) {
+            const serializedMessageList = step.suspendPayload.__streamState.messageList;
+            // Deserialize the messageList state to restore messages from the suspended state
+            messageList.deserialize(serializedMessageList);
+            break;
+          }
+        }
+      }
 
       // Add instructions as system message(s)
       addSystemMessage(messageList, instructions);
