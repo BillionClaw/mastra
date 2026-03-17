@@ -811,7 +811,7 @@ describe('TokenLimiterProcessor', () => {
       expect(messagesAfter.length).toBeLessThan(beforeCount);
     });
 
-    it('should throw TripWire for empty messages', async () => {
+    it('should return early for empty messages instead of throwing', async () => {
       const processor = new TokenLimiterProcessor({ limit: 1000 });
 
       const runner = new ProcessorRunner({
@@ -822,6 +822,7 @@ describe('TokenLimiterProcessor', () => {
 
       const messageList = new MessageList();
 
+      // Should not throw, just return early when no messages
       await expect(
         runner.runProcessInputStep({
           messageList,
@@ -829,7 +830,7 @@ describe('TokenLimiterProcessor', () => {
           model: createMockModel(),
           steps: [],
         }),
-      ).rejects.toThrow('TokenLimiterProcessor: No messages to process');
+      ).resolves.not.toThrow();
     });
 
     it('should throw TripWire when system messages exceed limit', async () => {
