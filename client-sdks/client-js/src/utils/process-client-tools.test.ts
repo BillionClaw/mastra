@@ -85,4 +85,23 @@ describe('processClientTools', () => {
     expect(tool.outputSchema.type).toBe('object');
     expect(tool.outputSchema.properties?.temperature).toBeDefined();
   });
+
+  it('should convert empty z.object({}) with type: object (issue #14338)', () => {
+    const clientTools = {
+      example: {
+        id: 'example',
+        description: 'Example client tool.',
+        inputSchema: z.object({}),
+        execute: async () => {},
+      },
+    };
+
+    const result = processClientTools(clientTools as any);
+    const tool = result!['example'] as any;
+
+    // The schema should have type: 'object', not anyOf with multiple types
+    // Issue #14338: z.object({}) was being converted to anyOf with no type
+    expect(tool.inputSchema).toBeDefined();
+    expect(tool.inputSchema.type).toBe('object');
+  });
 });
