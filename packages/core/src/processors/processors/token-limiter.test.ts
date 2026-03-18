@@ -811,7 +811,7 @@ describe('TokenLimiterProcessor', () => {
       expect(messagesAfter.length).toBeLessThan(beforeCount);
     });
 
-    it('should throw TripWire for empty messages', async () => {
+    it('should skip processing when there are no messages (resumeStream case)', async () => {
       const processor = new TokenLimiterProcessor({ limit: 1000 });
 
       const runner = new ProcessorRunner({
@@ -822,6 +822,8 @@ describe('TokenLimiterProcessor', () => {
 
       const messageList = new MessageList();
 
+      // Should not throw when there are no messages (e.g., during resumeStream)
+      // The processor should skip processing and let the workflow restore messages from snapshot
       await expect(
         runner.runProcessInputStep({
           messageList,
@@ -829,7 +831,10 @@ describe('TokenLimiterProcessor', () => {
           model: createMockModel(),
           steps: [],
         }),
-      ).rejects.toThrow('TokenLimiterProcessor: No messages to process');
+      ).resolves.not.toThrow();
+
+      // MessageList should remain empty since there were no messages to process
+      expect(messageList.get.all.db().length).toBe(0);
     });
 
     it('should throw TripWire when system messages exceed limit', async () => {
