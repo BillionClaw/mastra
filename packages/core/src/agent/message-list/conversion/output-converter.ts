@@ -47,6 +47,8 @@ export function sanitizeAIV4UIMessages(messages: UIMessageV4[]): UIMessageV4[] {
 /**
  * Sanitizes AIV5 UI messages by filtering out streaming states, data-* parts, empty text parts, and optionally incomplete tool calls.
  * Handles legacy data by filtering empty text parts that may exist in pre-existing DB records.
+ * When filterIncompleteToolCalls=true (building prompt TO the LLM), clears all OpenAI providerMetadata
+ * to prevent "Duplicate item found" errors from OpenAI's Responses API item IDs (msg_*, rs_*, fc_*).
  */
 export function sanitizeV5UIMessages(
   messages: AIV5Type.UIMessage[],
@@ -124,16 +126,36 @@ export function sanitizeV5UIMessages(
 
       if (!safeParts.length) return false;
 
+      // When building a prompt TO the LLM (filterIncompleteToolCalls=true), always clear
+      // providerMetadata.openai from message-level metadata to prevent "Duplicate item found" errors.
+      // OpenAI's Responses API assigns unique item IDs (msg_*, rs_*, fc_*) to messages.
+      // See: https://github.com/mastra-ai/mastra/issues/14319
+      let messageMetadata = m.metadata;
+      if (filterIncompleteToolCalls && messageMetadata?.providerMetadata) {
+        const meta = messageMetadata.providerMetadata as Record<string, unknown>;
+        if ('openai' in meta) {
+          const { openai: _, ...restMeta } = meta;
+          messageMetadata = {
+            ...messageMetadata,
+            providerMetadata: Object.keys(restMeta).length > 0 ? restMeta : undefined,
+          };
+        }
+      }
+
       const sanitized = {
         ...m,
+        metadata: messageMetadata,
         parts: safeParts.map(part => {
-          // When OpenAI reasoning was stripped, clear openai metadata from ALL remaining
-          // parts so the SDK sends inline content instead of item_reference. This covers:
+          // When building a prompt TO the LLM (filterIncompleteToolCalls=true), always clear
+          // providerMetadata.openai to prevent "Duplicate item found" errors.
+          // OpenAI's Responses API assigns unique item IDs (msg_*, rs_*, fc_*) to messages,
+          // and replaying them causes duplicate ID errors.
+          // This covers:
           //   - providerMetadata.openai on text/reasoning parts (msg_*/rs_* itemIds)
           //   - callProviderMetadata.openai on tool parts (fc_* itemIds used by convertToModelMessages)
-          // Without paired reasoning items, OpenAI rejects orphaned item_references with:
-          //   "function_call was provided without its required reasoning item"
-          if (hasOpenAIReasoning) {
+          // See: https://github.com/mastra-ai/mastra/issues/12980
+          // See: https://github.com/mastra-ai/mastra/issues/14319
+          if (filterIncompleteToolCalls) {
             if ('providerMetadata' in part && part.providerMetadata) {
               const meta = part.providerMetadata as Record<string, unknown>;
               if ('openai' in meta) {
