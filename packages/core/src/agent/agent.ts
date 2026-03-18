@@ -4958,7 +4958,7 @@ export class Agent<
 
     const workflowsStore = await this.#mastra?.getStorage()?.getStore('workflows');
     const existingSnapshot = await workflowsStore?.loadWorkflowSnapshot({
-      workflowName: 'agentic-loop',
+      workflowName: 'execution-workflow',
       runId: streamOptions?.runId ?? '',
     });
 
@@ -5083,7 +5083,7 @@ export class Agent<
 
     const workflowsStore = await this.#mastra?.getStorage()?.getStore('workflows');
     const existingSnapshot = await workflowsStore?.loadWorkflowSnapshot({
-      workflowName: 'agentic-loop',
+      workflowName: 'execution-workflow',
       runId: options?.runId ?? '',
     });
 
