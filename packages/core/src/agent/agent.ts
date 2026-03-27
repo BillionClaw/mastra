@@ -170,7 +170,7 @@ export class Agent<
   #scorers: DynamicArgument<MastraScorers>;
   #agents: DynamicArgument<Record<string, Agent>>;
   #voice: MastraVoice;
-  #workspace?: DynamicArgument<AnyWorkspace | undefined>;
+  #workspace?: DynamicArgument<AnyWorkspace | undefined, TRequestContext>;
   #inputProcessors?: DynamicArgument<InputProcessorOrWorkflow[]>;
   #outputProcessors?: DynamicArgument<OutputProcessorOrWorkflow[]>;
   #maxProcessorRetries?: number;
@@ -909,7 +909,7 @@ export class Agent<
    */
   public async getWorkspace({
     requestContext = new RequestContext(),
-  }: { requestContext?: RequestContext } = {}): Promise<AnyWorkspace | undefined> {
+  }: { requestContext?: RequestContext<TRequestContext> } = {}): Promise<AnyWorkspace | undefined> {
     // If agent has its own workspace configured, use it
     if (this.#workspace) {
       if (typeof this.#workspace !== 'function') {
